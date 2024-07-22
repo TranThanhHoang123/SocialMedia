@@ -14,6 +14,11 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     serializer_class = serializers.UserSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def get_permissions(self):
+        if self.action in ['create']:
+            return [permissions.AllowAny()]
+        return self.permission_classes
+
     def get_object(self):
         return self.request.user
 
