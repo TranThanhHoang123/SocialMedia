@@ -41,6 +41,17 @@ class Post(BaseModel):
     visibility = models.CharField(max_length=7, choices=VISIBILITY_CHOICES, default='public')
     custom_viewers = models.ManyToManyField(User, related_name='custom_view_posts', blank=True)
 
+    def can_view(self, user):
+        if self.visibility == 'public':
+            return True
+        if self.visibility == 'private' and self.user == user:
+            return True
+        if self.visibility == 'friends' and user in self.user.friends.all():
+            return True
+        if self.visibility == 'custom' and user in self.custom_viewers.all():
+            return True
+        return False
+
     def __str__(self):
         return f"Post {self.id}"
 
@@ -57,7 +68,7 @@ class Comment(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     content = models.TextField(blank=True, null=True)
-    file = models.FileField(upload_to='comment/%Y/%m', blank=True, null=True)  # Đính kèm video
+    file = models.FileField(upload_to='comment/%Y/%m', blank=True, null=True)  # Đính kèm video hoặc ảnh
 
 
 class Like(models.Model):
