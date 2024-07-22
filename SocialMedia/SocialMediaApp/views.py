@@ -17,8 +17,8 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     def get_permissions(self):
         if self.action in ['create']:
             return [permissions.AllowAny()]
-        return self.permission_classes
-
+        return [permissions.IsAuthenticated()]
+    
     def get_object(self):
         return self.request.user
 
