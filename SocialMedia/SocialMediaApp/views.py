@@ -7,7 +7,92 @@ from . import serializers,utils,my_paginations
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
+from django.http import JsonResponse, HttpResponse
+from oauth2_provider.views import TokenView
+from .utils import *
+from oauth2_provider.models import Application, AccessToken, RefreshToken
+from rest_framework.decorators import api_view, permission_classes
+from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.permissions import AllowAny
+from oauth2_provider.settings import oauth2_settings
+import hashlib
+import json
+import uuid
 # Create your views here.
+
+#Xu ly dang nhap bang refresh token http only
+class CustomTokenView(TokenView):
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == 200:
+            data = json.loads(response.content)
+            refresh_token = data.get('refresh_token')
+            response.set_cookie(
+                key='refresh_token',
+                value=refresh_token,
+                expires=settings.OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'],
+                secure=True,
+                httponly=True,
+                samesite='Lax'
+            )
+        return response
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def custom_refresh_token(request):
+    refresh_token = request.COOKIES.get('refresh_token')
+    client_id = request.data.get('client_id')
+    client_secret = request.data.get('client_secret')
+
+    if not refresh_token:
+        return JsonResponse({'error': 'No refresh token provided'}, status=400)
+
+    if not client_id or not client_secret:
+        return JsonResponse({'error': 'Client ID and client secret required'}, status=400)
+
+    try:
+        application = Application.objects.get(client_id=client_id)
+    except Application.DoesNotExist:
+        return JsonResponse({'error': 'Invalid client credentials'}, status=400)
+
+    # So sánh client_secret đã mã hóa
+    if not check_client_secret(application.client_secret, client_secret):
+        return JsonResponse({'error': 'Invalid client credentials'}, status=400)
+
+    try:
+        token = RefreshToken.objects.get(token=refresh_token, application=application)
+    except RefreshToken.DoesNotExist:
+        return JsonResponse({'error': 'Invalid refresh token'}, status=400)
+
+        # Tính toán thời gian hết hạn của refresh token
+        token_expires_at = token.updated + timedelta(seconds=OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'])
+
+        # Kiểm tra thời gian hết hạn
+        if timezone.now() > token_expires_at:
+            return JsonResponse({'error': 'Refresh token expired'}, status=400)
+
+    user = token.user
+
+    # Tạo token ngẫu nhiên
+    new_access_token = uuid.uuid4().hex
+
+    # Lưu access token mới vào cơ sở dữ liệu
+    new_access_token_obj = AccessToken.objects.create(
+        user=user,
+        application=application,
+        token=new_access_token,
+        expires=timezone.now() + timedelta(seconds=oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS),
+    )
+
+    response_data = {
+        'access_token': new_access_token_obj.token,
+        'expires_in': oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS
+    }
+
+    return JsonResponse(response_data)
 
 
 class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):

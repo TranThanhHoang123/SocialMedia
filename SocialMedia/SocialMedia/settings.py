@@ -159,6 +159,12 @@ AUTHENTICATION_BACKENDS = (
     'oauth2_provider.backends.OAuth2Backend',
 )
 
+OAUTH2_PROVIDER = {
+    'ACCESS_TOKEN_EXPIRE_SECONDS': 3600,
+    'REFRESH_TOKEN_EXPIRE_SECONDS': 86400,
+    'ROTATE_REFRESH_TOKEN': True,
+}
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CLIENT_ID="NxgQmin8CgbpJPczgLZOTavcAZL1y18dZmmvFyxp"

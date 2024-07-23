@@ -93,7 +93,7 @@ class ProfilePostSerializer(serializers.ModelSerializer):
 
 
 class UserDetailSerializer(serializers.ModelSerializer):
-    profile = ProfileSerializer()
+    profile = ProfileDetailSerializer()
 
     class Meta:
         model = User
@@ -106,7 +106,7 @@ class UserPostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'profile']
+        fields = ['first_name', 'last_name','username', 'profile']
 
 
 class PostDetailSerializer(PostSerializer):
