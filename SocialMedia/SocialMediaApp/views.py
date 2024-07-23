@@ -27,7 +27,7 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     def profile(self, request, pk=None):
         user = self.get_object()
         if request.method == 'GET':
-            return Response(serializers.ProfileDetailSerializer(user.profile,context={'request':request}).data, status=status.HTTP_200_OK)
+            return Response(serializers.UserDetailSerializer(user,context={'request':request}).data, status=status.HTTP_200_OK)
         elif request.method == 'PATCH':
             profile = user.profile
             serializer = serializers.ProfileSerializer(profile, data=request.data, partial=True)
