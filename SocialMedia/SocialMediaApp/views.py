@@ -33,7 +33,7 @@ class CustomTokenView(TokenView):
                 key='refresh_token',
                 value=refresh_token,
                 expires=settings.OAUTH2_PROVIDER['REFRESH_TOKEN_EXPIRE_SECONDS'],
-                secure=True,
+                secure=False,
                 httponly=True,
                 samesite='Lax'
             )

@@ -8,14 +8,10 @@ from oauth2_provider.models import AccessToken, RefreshToken
 from datetime import timedelta
 from oauth2_provider.oauth2_backends import OAuthLibCore
 from django.contrib.auth.hashers import PBKDF2PasswordHasher
+from django.contrib.auth.hashers import check_password
 
-# Custom hasher để phù hợp với cấu hình của bạn
-class CustomPBKDF2PasswordHasher(PBKDF2PasswordHasher):
-    iterations = 720000  # Số lần lặp của bạn
-
-def check_client_secret(stored_hash, secret):
-    hasher = CustomPBKDF2PasswordHasher()
-    return hasher.verify(secret, stored_hash)
+def check_client_secret(stored_secret, provided_secret):
+    return check_password(provided_secret, stored_secret)
 
 def refresh_access_token(refresh_token_value):
     try:
