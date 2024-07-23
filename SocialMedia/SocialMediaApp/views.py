@@ -122,28 +122,79 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView):
+class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView):
     queryset = Post.objects.all()
     serializer_class = serializers.PostSerializer
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = my_paginations.PostPagination  # Sử dụng phân trang tùy chỉnh
 
-    @action(methods=['get'], url_path='comments', detail=True)  # Sửa 'pk=True' thành 'detail=True'
-    def get_comment(self, request, pk=None):
+
+    def retrieve(self, request, *args, **kwargs):
         post = self.get_object()  # Lấy đối tượng Post dựa trên pk
-        comments = Comment.objects.filter(post=post)  # Lọc các bình luận liên quan đến post
+
+        # Lấy tất cả bình luận liên quan đến bài viết
+        comments = Comment.objects.filter(post=post)
 
         # Phân trang bình luận
-        paginator = my_paginations.CommentPagination()
+        paginator = my_paginations.CommentPagination()  # Sử dụng phân trang bình luận
         page = paginator.paginate_queryset(comments, request)
         if page is not None:
-            serializer = serializers.CommentListSerializer(page, many=True, context={'request': request})
-            return paginator.get_paginated_response(serializer.data)
+            comment_serializer = serializers.CommentListSerializer(page, many=True, context={'request': request})
+            comments_data = paginator.get_paginated_response(comment_serializer.data).data
+        else:
+            comment_serializer = serializers.CommentListSerializer(comments, many=True, context={'request': request})
+            comments_data = {
+                'count': len(comments),
+                'next': None,
+                'previous': None,
+                'results': comment_serializer.data
+            }
 
-        # Nếu không có phân trang, trả về tất cả bình luận
-        serializer = serializers.CommentListSerializer(comments, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
+        # Serialize dữ liệu bài viết
+        post_serializer = serializers.PostDetailSerializer(post, context={'request': request})
 
+        # Tạo cấu trúc dữ liệu trả về
+        response_data = {
+            'post': post_serializer.data,
+            'comments': comments_data
+        }
+
+        return Response(response_data, status=status.HTTP_200_OK)
+
+    @action(methods=['post', 'get'], detail=True, url_path='like')
+    def like(self, request, pk=None):
+        user = request.user
+        post = get_object_or_404(Post, pk=pk)
+
+        if request.method == 'POST':
+            like, created = Like.objects.get_or_create(user=user, post=post)
+
+            if not created:
+                like.delete()
+                return Response({'message': 'Post unliked'}, status=status.HTTP_200_OK)
+
+            return Response({'message': 'Post liked'}, status=status.HTTP_201_CREATED)
+
+        if request.method == 'GET':
+            # Lấy tất cả người dùng đã thích bài viết
+            likes = Like.objects.filter(post=post).select_related('user')
+
+            # Chuyển đổi người dùng thành dữ liệu phù hợp với UserDetailSerializer
+            users = [like.user for like in likes]
+
+            # Phân trang dữ liệu nếu cần thiết
+            page = self.paginate_queryset(users)
+            if page is not None:
+                serializer = serializers.UserListSerializer(page, many=True, context={'request': request})
+                return self.get_paginated_response(serializer.data)
+
+            # Trả về tất cả người dùng nếu không phân trang
+            serializer = serializers.UserDetailSerializer(users, many=True, context={'request': request})
+            return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+
+    #tạo post
     def create(self, request, *args, **kwargs):
         user = self.request.user
         content = self.request.data.get('content')
@@ -182,7 +233,6 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         post = get_object_or_404(Post, pk=pk, user=request.user)
         post.delete()
         return Response({'message': 'Xóa bài viết thành công'}, status=status.HTTP_204_NO_CONTENT)
-
 
 class CommentViewSet(viewsets.ViewSet):
     queryset = Comment.objects.all()

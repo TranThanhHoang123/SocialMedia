@@ -19,7 +19,6 @@ class UserSerializer(serializers.ModelSerializer):
         return user
 
 
-
 class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
@@ -67,7 +66,7 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'content', 'media', 'visibility', 'custom_viewers']
+        fields = ['id', 'content', 'media', 'visibility', 'custom_viewers','created_date','updated_date']
 
 
 # profile hiển thị theo post
@@ -97,20 +96,20 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name','username', 'profile']
+        fields = ['first_name', 'last_name', 'username', 'profile']
 
 
 # user hiển thị theo post
-class UserPostSerializer(serializers.ModelSerializer):
+class UserListSerializer(serializers.ModelSerializer):
     profile = ProfilePostSerializer()
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name','username', 'profile']
+        fields = ['first_name', 'last_name', 'username', 'profile']
 
 
 class PostDetailSerializer(PostSerializer):
-    user = UserPostSerializer()
+    user = UserListSerializer()
 
     class Meta(PostSerializer.Meta):
         fields = PostSerializer.Meta.fields + ['user']
@@ -120,7 +119,7 @@ class PostDetailSerializer(PostSerializer):
 class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
-        fields = ['id', 'post', 'user', 'content', 'file']
+        fields = ['id', 'post', 'user', 'content', 'file','created_date','updated_date']
         read_only_fields = ['user']
 
     def create(self, validated_data):
@@ -129,7 +128,7 @@ class CommentSerializer(serializers.ModelSerializer):
 
 
 class CommentListSerializer(CommentSerializer):
-    user = UserPostSerializer()
+    user = UserListSerializer()
     file = serializers.SerializerMethodField()
 
     def get_file(self, obj):
@@ -140,3 +139,9 @@ class CommentListSerializer(CommentSerializer):
 
     class Meta(CommentSerializer.Meta):
         pass
+
+
+class LikeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Like
+        fields = ['user', 'post']
