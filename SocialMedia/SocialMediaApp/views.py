@@ -3,7 +3,7 @@ from rest_framework import viewsets, generics, status, permissions
 from .models import *
 from django.db.models import Q
 from rest_framework.response import Response
-from . import serializers,utils,my_paginations
+from . import serializers, utils, my_paginations
 from rest_framework.decorators import action
 from rest_framework.parsers import MultiPartParser, FormParser
 from django.shortcuts import get_object_or_404
@@ -20,9 +20,15 @@ from oauth2_provider.settings import oauth2_settings
 import hashlib
 import json
 import uuid
+from django.db import transaction
+from .signals import *
+import pdb
+
+
+
 # Create your views here.
 
-#Xu ly dang nhap bang refresh token http only
+# Xu ly dang nhap bang refresh token http only
 class CustomTokenView(TokenView):
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
@@ -99,20 +105,21 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = serializers.UserSerializer
     permission_classes = [permissions.IsAuthenticated]
-
+    pagination_class = my_paginations.UserPagination
     def get_permissions(self):
         if self.action in ['create']:
             return [permissions.AllowAny()]
         return [permissions.IsAuthenticated()]
-    
+
     def get_object(self):
         return self.request.user
 
-    @action(methods=['get','patch'], detail=False, url_path='profile')
+    @action(methods=['get', 'patch'], detail=False, url_path='profile')
     def profile(self, request, pk=None):
         user = self.get_object()
         if request.method == 'GET':
-            return Response(serializers.UserDetailSerializer(user,context={'request':request}).data, status=status.HTTP_200_OK)
+            return Response(serializers.UserDetailSerializer(user, context={'request': request}).data,
+                            status=status.HTTP_200_OK)
         elif request.method == 'PATCH':
             profile = user.profile
             serializer = serializers.ProfileSerializer(profile, data=request.data, partial=True)
@@ -121,13 +128,44 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
                 return Response({'message': 'Sửa đổi Profile thành công'}, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+    @action(methods=['post'], detail=True, url_path='follow')
+    def follow(self, request, pk=None):
+        user = self.get_object()
+        try:
+            to_user = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
+        if user == to_user:
+            return Response({'error': 'You cannot follow yourself'}, status=status.HTTP_400_BAD_REQUEST)
+        follow, created = Follow.objects.get_or_create(from_user=user, to_user=to_user)
+        if not created:
+            follow.delete()
+            return Response({'message': 'Unfollowed successfully'}, status=status.HTTP_200_OK)
+        else:
+            return Response({'message': 'Followed successfully'}, status=status.HTTP_201_CREATED)
+
+    @action(methods=['get'], detail=False, url_path='following')
+    def following(self, request, pk=None):
+        user = self.get_object()
+        following_users = User.objects.filter(follower__from_user=user)
+        page = self.paginate_queryset(following_users)
+        serializer = serializers.UserListSerializer(page, many=True, context={'request': request})
+        return self.get_paginated_response(serializer.data)
+
+    @action(methods=['get'], detail=False, url_path='followers')
+    def followers(self, request, pk=None):
+        user = self.get_object()
+        followers_users = User.objects.filter(following__to_user=user)
+        page = self.paginate_queryset(followers_users)
+        serializer = serializers.UserListSerializer(page, many=True, context={'request': request})
+        return self.get_paginated_response(serializer.data)
+
 
 class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView):
     queryset = Post.objects.all()
     serializer_class = serializers.PostSerializer
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = my_paginations.PostPagination  # Sử dụng phân trang tùy chỉnh
-
 
     def retrieve(self, request, *args, **kwargs):
         post = self.get_object()  # Lấy đối tượng Post dựa trên pk
@@ -168,7 +206,6 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
 
         if request.method == 'POST':
             like, created = Like.objects.get_or_create(user=user, post=post)
-
             if not created:
                 like.delete()
                 return Response({'message': 'Post unliked'}, status=status.HTTP_200_OK)
@@ -185,21 +222,19 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
             # Phân trang dữ liệu nếu cần thiết
             page = self.paginate_queryset(users)
             if page is not None:
-                serializer = serializers.UserListSerializer(page, many=True, context={'request': request})
+                serializer = serializers.UserDetailSerializer(page, many=True, context={'request': request})
                 return self.get_paginated_response(serializer.data)
 
             # Trả về tất cả người dùng nếu không phân trang
             serializer = serializers.UserDetailSerializer(users, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-
-
-    #tạo post
+    # Tạo post
     def create(self, request, *args, **kwargs):
         user = self.request.user
         content = self.request.data.get('content')
         visibility = self.request.data.get('visibility')
-        custom_viewers = self.request.data.get('custom_viewers',[])
+        custom_viewers = self.request.data.get('custom_viewers', [])
         media = self.request.FILES.getlist('media')  # Lấy danh sách các file media
         post = Post.objects.create(user=user, content=content, visibility=visibility)
         if visibility == 'custom':
@@ -212,12 +247,12 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
 
     def list(self, request, *args, **kwargs):
         user = request.user
-        friends = user.friends.all()  # Giả định rằng bạn có một mối quan hệ nhiều-nhiều giữa người dùng và bạn bè
-
+        following = user.following.all()  # Lấy danh sách người mà người dùng hiện tại đang theo dõi
+        #lấy danh sách post của mọi người
         queryset = Post.objects.filter(
             Q(visibility='public') |
             Q(user=user) |
-            Q(visibility='friends', user__in=friends) |
+            Q(visibility='friends', user__in=following) |
             Q(visibility='custom', custom_viewers=user)
         ).distinct()
 
@@ -230,9 +265,11 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         return Response(serializer.data)
 
     def destroy(self, request, pk=None):
+        disconnect_signals_decrease_like_count()
         post = get_object_or_404(Post, pk=pk, user=request.user)
         post.delete()
         return Response({'message': 'Xóa bài viết thành công'}, status=status.HTTP_204_NO_CONTENT)
+
 
 class CommentViewSet(viewsets.ViewSet):
     queryset = Comment.objects.all()
@@ -272,4 +309,4 @@ class CommentViewSet(viewsets.ViewSet):
     def destroy(self, request, pk=None):
         comment = get_object_or_404(Comment, pk=pk, user=request.user)
         comment.delete()  # Xóa comment và tệp tin đính kèm
-        return Response({'message': 'Xóa thành công comment'},status=status.HTTP_204_NO_CONTENT)
+        return Response({'message': 'Xóa thành công comment'}, status=status.HTTP_204_NO_CONTENT)

@@ -66,11 +66,11 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'content', 'media', 'visibility', 'custom_viewers','created_date','updated_date']
+        fields = ['id', 'content', 'media','like_number','comment_number', 'visibility', 'custom_viewers','created_date','updated_date']
 
 
 # profile hiển thị theo post
-class ProfilePostSerializer(serializers.ModelSerializer):
+class ProfileListSerializer(serializers.ModelSerializer):
     profile_background = serializers.SerializerMethodField()
     profile_picture = serializers.SerializerMethodField()
 
@@ -96,12 +96,12 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'username', 'profile']
+        fields = ['first_name', 'last_name', 'username','following_count','followers_count', 'profile']
 
 
 # user hiển thị theo post
 class UserListSerializer(serializers.ModelSerializer):
-    profile = ProfilePostSerializer()
+    profile = ProfileListSerializer()
 
     class Meta:
         model = User

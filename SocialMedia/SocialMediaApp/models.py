@@ -12,10 +12,24 @@ class BaseModel(models.Model):
 
 
 class User(AbstractUser):
-    friends = models.ManyToManyField('self', symmetrical=True, blank=True)
+    # Trường đếm số người đang theo dõi
+    following_count = models.PositiveIntegerField(default=0)
+    # Trường đếm số người theo dõi mình
+    followers_count = models.PositiveIntegerField(default=0)
+
+
+class Follow(models.Model):
+    from_user = models.ForeignKey(User, related_name='following', on_delete=models.CASCADE)  # Thay đổi related_name
+    to_user = models.ForeignKey(User, related_name='follower', on_delete=models.CASCADE)  # Thay đổi related_name
+    created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ['email']
+        constraints = [
+            models.UniqueConstraint(fields=['from_user', 'to_user'], name='unique_follow')
+        ]
+
+    def __str__(self):
+        return f"{self.from_user} follows {self.to_user}"
 
 
 class Profile(BaseModel):
@@ -27,18 +41,21 @@ class Profile(BaseModel):
     profile_background = models.ImageField(upload_to='user/%Y/%m', default='user/avatar.svg')
     profile_picture = models.ImageField(upload_to='user/%Y/%m', default='user/avatar.svg')
     public_profile = models.BooleanField(default=True)  # Trường để xác định trang cá nhân có công khai hay riêng tư
-
+    like_number = models.PositiveIntegerField(default=0)
+    post_number = models.PositiveIntegerField(default=0)
 
 class Post(BaseModel):
     VISIBILITY_CHOICES = [
         ('public', 'Public'),
-        ('friends', 'Friends'),
+        ('followers', 'Follower'),
         ('private', 'Only Me'),
         ('custom', 'Custom'),
     ]
+    like_number = models.PositiveIntegerField(default=0)
+    comment_number = models.PositiveIntegerField(default=0)
     content = models.TextField(blank=True, null=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
-    visibility = models.CharField(max_length=7, choices=VISIBILITY_CHOICES, default='public')
+    visibility = models.CharField(max_length=9, choices=VISIBILITY_CHOICES, default='public')
     custom_viewers = models.ManyToManyField(User, related_name='custom_view_posts', blank=True)
 
     def can_view(self, user):
@@ -46,7 +63,7 @@ class Post(BaseModel):
             return True
         if self.visibility == 'private' and self.user == user:
             return True
-        if self.visibility == 'friends' and user in self.user.friends.all():
+        if self.visibility == 'followers' and user in self.user.followers.all():
             return True
         if self.visibility == 'custom' and user in self.custom_viewers.all():
             return True
