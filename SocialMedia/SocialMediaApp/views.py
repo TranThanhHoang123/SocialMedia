@@ -176,7 +176,7 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         post = self.get_object()  # Lấy đối tượng Post dựa trên pk
 
         # Lấy tất cả bình luận liên quan đến bài viết
-        comments = Comment.objects.filter(post=post)
+        comments = Comment.objects.filter(post=post,parent=None).order_by('-created_date')
 
         # Phân trang bình luận
         paginator = my_paginations.CommentPagination()  # Sử dụng phân trang bình luận
@@ -278,19 +278,37 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         post.delete()
         return Response({'message': 'Xóa bài viết thành công'}, status=status.HTTP_204_NO_CONTENT)
 
-    @action(methods=['post'], detail=True, url_path='comment')
+    @action(methods=['post', 'get'], detail=True, url_path='comment')
     def comment(self, request, pk=None):
         post = get_object_or_404(Post, pk=pk)
-        # Tạo bình luận mới
-        data = request.data.copy()
-        data['user'] = request.user.id
-        data['post'] = pk
-        serializer = serializers.CommentSerializer(data=data, context={'request': request})
-        if serializer.is_valid():
-            comment = serializer.save()
-            response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        if request.method == 'POST':
+            # Tạo bình luận mới
+            data = request.data.copy()
+            data['user'] = request.user.id
+            data['post'] = pk
+
+            parent_id = data.get('parent')
+            if parent_id:
+                parent_comment = get_object_or_404(Comment, pk=parent_id)
+                data['parent'] = parent_comment.id
+
+            serializer = serializers.CommentSerializer(data=data, context={'request': request})
+            if serializer.is_valid():
+                comment = serializer.save()
+                response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
+                return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        elif request.method == 'GET':
+            # Lấy danh sách bình luận với phân trang
+            comments = Comment.objects.filter(post=post, parent=None).order_by('-created_at')
+            page = self.paginate_queryset(comments)
+            if page is not None:
+                serializer = serializers.CommentListSerializer(page, many=True, context={'request': request})
+                return self.get_paginated_response(serializer.data)
+            serializer = serializers.CommentListSerializer(comments, many=True, context={'request': request})
+            return Response(serializer.data)
 
     def partial_update(self, request, pk=None):
         post = get_object_or_404(Post, pk=pk, user=request.user)
@@ -327,23 +345,24 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-class CommentViewSet(viewsets.ViewSet):
+class CommentViewSet(viewsets.ViewSet,generics.ListAPIView):
     queryset = Comment.objects.all()
     serializer_class = serializers.CommentSerializer
     parser_classes = [MultiPartParser, FormParser]
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = my_paginations.CommentPagination
 
-    # def create(self, request, *args, **kwargs):
-    #     data = request.data.copy()
-    #     data['user'] = request.user.id
-    #     serializer = self.serializer_class(data=data, context={'request': request})
-    #     if serializer.is_valid():
-    #         comment = serializer.save()
-    #         response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
-    #         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
+    @action(methods=['get'], detail=True, url_path='reply')
+    def reply(self, request, pk=None):
+        parent = get_object_or_404(Comment, pk=pk)
+        # Lấy danh sách bình luận phản hồi với phân trang
+        replies = Comment.objects.filter(parent=parent).order_by('-created_date')
+        page = self.paginate_queryset(replies)
+        if page is not None:
+            serializer = serializers.CommentListSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        serializer = serializers.CommentListSerializer(replies, many=True, context={'request': request})
+        return Response(serializer.data)
     def update(self, request, pk=None):
         comment = get_object_or_404(Comment, pk=pk, user=request.user)
         old_file = comment.file

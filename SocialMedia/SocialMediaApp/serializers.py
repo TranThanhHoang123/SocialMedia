@@ -128,12 +128,17 @@ class PostDetailSerializer(PostSerializer):
 class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
-        fields = ['id', 'post', 'user', 'content', 'file', 'created_date', 'updated_date']
+        fields = ['id', 'post', 'user', 'content','parent', 'file', 'created_date', 'updated_date']
         read_only_fields = ['user']
 
     def create(self, validated_data):
         validated_data['user'] = self.context['request'].user
         return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Loại bỏ trường 'parent' khỏi dữ liệu cập nhật
+        validated_data.pop('parent', None)
+        return super().update(instance, validated_data)
 
 
 class CommentListSerializer(CommentSerializer):

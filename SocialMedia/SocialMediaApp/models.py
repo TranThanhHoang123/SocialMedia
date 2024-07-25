@@ -85,6 +85,7 @@ class Comment(BaseModel):
     post = models.ForeignKey(Post, on_delete=models.CASCADE)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     content = models.TextField(blank=True, null=True)
+    parent = models.ForeignKey('self', related_name='replies', on_delete=models.CASCADE, null=True, blank=True)
     file = models.FileField(upload_to='comment/%Y/%m', blank=True, null=True)  # Đính kèm video hoặc ảnh
 
 
