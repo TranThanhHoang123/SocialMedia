@@ -164,11 +164,11 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
 class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView,generics.ListAPIView):
     queryset = Post.objects.all().order_by('-created_date')
     serializer_class = serializers.PostSerializer
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser]  # Thêm các parser này để xử lý form-data
     pagination_class = my_paginations.PostPagination  # Sử dụng phân trang tùy chỉnh
 
     def get_serializer_class(self):
-        if self.action in ['list']:
+        if self.action in ['list','get_personal_posts_list']:
             return serializers.PostDetailSerializer
         return self.serializer_class
 
@@ -239,11 +239,13 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         user = self.request.user
         content = self.request.data.get('content')
         visibility = self.request.data.get('visibility')
-        custom_viewers = self.request.data.get('custom_viewers', [])
+        custom_viewers_ids = self.request.data.getlist('custom_viewers')
         media = self.request.FILES.getlist('media')  # Lấy danh sách các file media
         post = Post.objects.create(user=user, content=content, visibility=visibility)
         if visibility == 'custom':
-            post.custom_viewers.set(custom_viewers)
+            # Lấy danh sách các user từ danh sách id
+            custom_viewers = User.objects.filter(id__in=custom_viewers_ids)
+            post.custom_viewers.set(custom_viewers)  # Thêm tất cả các custom_viewers vào bài viết
 
         for file in media:
             Media.objects.create(post=post, file=file)
@@ -276,6 +278,54 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         post.delete()
         return Response({'message': 'Xóa bài viết thành công'}, status=status.HTTP_204_NO_CONTENT)
 
+    @action(methods=['post'], detail=True, url_path='comment')
+    def comment(self, request, pk=None):
+        post = get_object_or_404(Post, pk=pk)
+        # Tạo bình luận mới
+        data = request.data.copy()
+        data['user'] = request.user.id
+        data['post'] = pk
+        serializer = serializers.CommentSerializer(data=data, context={'request': request})
+        if serializer.is_valid():
+            comment = serializer.save()
+            response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
+            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    def partial_update(self, request, pk=None):
+        post = get_object_or_404(Post, pk=pk, user=request.user)
+        serializer = self.get_serializer(post, data=request.data, partial=True)
+        if serializer.is_valid():
+            updated_post = serializer.save()
+            # Xóa custom_viewers nếu visibility không phải là 'custom'
+            if 'visibility' in request.data and request.data['visibility'] != 'custom':
+                updated_post.custom_viewers.clear()
+            # Thêm media mới
+            new_media = request.FILES.getlist('media')  # Lấy danh sách các file media mới
+            if new_media:
+                for file in new_media:
+                    Media.objects.create(post=updated_post, file=file)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(methods=['get'], url_path='personal', detail=False)
+    def get_personal_posts_list(self, request, pk=None):
+        # Lấy người dùng từ request hoặc sử dụng pk để tìm người dùng
+        user = request.user  # Lấy người dùng từ pk (nếu pk là ID người dùng)
+
+        # Lọc các bài viết của người dùng
+        posts = Post.objects.filter(user=user)
+
+        # Phân trang nếu cần
+        page = self.paginate_queryset(posts)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+
+        # Trả về dữ liệu nếu không sử dụng phân trang
+        serializer = self.get_serializer(posts, many=True, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
 
 class CommentViewSet(viewsets.ViewSet):
     queryset = Comment.objects.all()
@@ -284,15 +334,15 @@ class CommentViewSet(viewsets.ViewSet):
     permission_classes = [permissions.IsAuthenticated]
     pagination_class = my_paginations.CommentPagination
 
-    def create(self, request, *args, **kwargs):
-        data = request.data.copy()
-        data['user'] = request.user.id
-        serializer = self.serializer_class(data=data, context={'request': request})
-        if serializer.is_valid():
-            comment = serializer.save()
-            response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
-            return Response(response_serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    # def create(self, request, *args, **kwargs):
+    #     data = request.data.copy()
+    #     data['user'] = request.user.id
+    #     serializer = self.serializer_class(data=data, context={'request': request})
+    #     if serializer.is_valid():
+    #         comment = serializer.save()
+    #         response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
+    #         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
+    #     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
     def update(self, request, pk=None):
         comment = get_object_or_404(Comment, pk=pk, user=request.user)
