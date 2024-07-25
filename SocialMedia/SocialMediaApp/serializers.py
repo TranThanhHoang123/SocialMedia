@@ -66,7 +66,8 @@ class PostSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Post
-        fields = ['id', 'content', 'media','like_number','comment_number', 'visibility', 'custom_viewers','created_date','updated_date']
+        fields = ['id', 'content', 'media', 'like_number', 'comment_number', 'visibility', 'custom_viewers',
+                  'created_date', 'updated_date']
 
 
 # profile hiển thị theo post
@@ -96,7 +97,7 @@ class UserDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = User
-        fields = ['first_name', 'last_name', 'username','following_count','followers_count', 'profile']
+        fields = ['first_name', 'last_name', 'username', 'following_count', 'followers_count', 'profile']
 
 
 # user hiển thị theo post
@@ -110,16 +111,24 @@ class UserListSerializer(serializers.ModelSerializer):
 
 class PostDetailSerializer(PostSerializer):
     user = UserListSerializer()
+    liked = serializers.SerializerMethodField()
 
     class Meta(PostSerializer.Meta):
-        fields = PostSerializer.Meta.fields + ['user']
+        fields = PostSerializer.Meta.fields + ['user', 'liked']
+
+    def get_liked(self, obj):
+        user = self.context['request'].user
+        if user.is_authenticated:
+            # Kiểm tra xem người dùng có like bài viết không
+            return Like.objects.filter(user=user, post=obj).exists()
+        return False
 
 
 # comment vào post
 class CommentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Comment
-        fields = ['id', 'post', 'user', 'content', 'file','created_date','updated_date']
+        fields = ['id', 'post', 'user', 'content', 'file', 'created_date', 'updated_date']
         read_only_fields = ['user']
 
     def create(self, validated_data):

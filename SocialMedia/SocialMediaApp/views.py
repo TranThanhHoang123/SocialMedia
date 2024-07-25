@@ -314,7 +314,7 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         user = request.user  # Lấy người dùng từ pk (nếu pk là ID người dùng)
 
         # Lọc các bài viết của người dùng
-        posts = Post.objects.filter(user=user)
+        posts = Post.objects.filter(user=user).order_by('-created_date')
 
         # Phân trang nếu cần
         page = self.paginate_queryset(posts)
