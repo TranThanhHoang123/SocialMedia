@@ -161,7 +161,7 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
         return self.get_paginated_response(serializer.data)
 
 
-class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView):
+class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView,generics.ListAPIView):
     queryset = Post.objects.all()
     serializer_class = serializers.PostSerializer
     parser_classes = [MultiPartParser, FormParser]
@@ -247,21 +247,22 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
 
     def list(self, request, *args, **kwargs):
         user = request.user
-        following = user.following.all()  # Lấy danh sách người mà người dùng hiện tại đang theo dõi
-        #lấy danh sách post của mọi người
+        following = user.following.all().values_list('to_user',
+                                                     flat=True)  # Lấy danh sách ID của người mà người dùng hiện tại đang theo dõi
+
         queryset = Post.objects.filter(
             Q(visibility='public') |
             Q(user=user) |
-            Q(visibility='friends', user__in=following) |
+            Q(visibility='followers', user__in=following) |
             Q(visibility='custom', custom_viewers=user)
         ).distinct()
 
         page = self.paginate_queryset(queryset)
         if page is not None:
-            serializer = serializers.PostDetailSerializer(page, many=True, context={'request': request})
+            serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
 
-        serializer = serializers.PostDetailSerializer(queryset, many=True, context={'request': request})
+        serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
     def destroy(self, request, pk=None):
