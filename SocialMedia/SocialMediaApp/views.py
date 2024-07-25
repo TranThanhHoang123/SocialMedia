@@ -162,10 +162,15 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
 
 
 class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView,generics.ListAPIView):
-    queryset = Post.objects.all()
+    queryset = Post.objects.all().order_by('-created_date')
     serializer_class = serializers.PostSerializer
     parser_classes = [MultiPartParser, FormParser]
     pagination_class = my_paginations.PostPagination  # Sử dụng phân trang tùy chỉnh
+
+    def get_serializer_class(self):
+        if self.action in ['list']:
+            return serializers.PostDetailSerializer
+        return self.serializer_class
 
     def retrieve(self, request, *args, **kwargs):
         post = self.get_object()  # Lấy đối tượng Post dựa trên pk
@@ -255,7 +260,7 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
             Q(user=user) |
             Q(visibility='followers', user__in=following) |
             Q(visibility='custom', custom_viewers=user)
-        ).distinct()
+        ).distinct().order_by('-created_date')
 
         page = self.paginate_queryset(queryset)
         if page is not None:
