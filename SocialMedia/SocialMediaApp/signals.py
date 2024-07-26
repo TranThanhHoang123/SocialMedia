@@ -20,28 +20,30 @@ def delete_comment_file(sender, instance, **kwargs):
 @receiver(post_save, sender=Like)
 def increase_like_count(sender, instance, created, **kwargs):
     if created:
+        with transaction.atomic():
         # Cập nhật số lượng like của bài viết
-        post = instance.post
-        post.like_number = F('like_number') + 1
-        post.save(update_fields=['like_number'])
+            post = instance.post
+            post.like_number = F('like_number') + 1
+            post.save(update_fields=['like_number'])
 
-        # Cập nhật số lượng like của người dùng
-        profile = post.user.profile
-        profile.like_number += 1
-        profile.save()
-        print('increase_like_count')
+            # Cập nhật số lượng like của người dùng
+            profile = post.user.profile
+            profile.like_number += 1
+            profile.save()
+            print('increase_like_count')
 
 
 @receiver(post_delete, sender=Like)
 def decrease_like_count(sender, instance, **kwargs):
-    post = instance.post
-    post.like_number = F('like_number') - 1
-    post.save(update_fields=['like_number'])
+    with transaction.atomic():
+        post = instance.post
+        post.like_number = F('like_number') - 1
+        post.save(update_fields=['like_number'])
 
-    profile = post.user.profile
-    profile.like_number -= 1
-    profile.save()
-    print('decrease_like_count')
+        profile = post.user.profile
+        profile.like_number -= 1
+        profile.save()
+        print('decrease_like_count')
 
 
 @receiver(post_save, sender=Comment)
