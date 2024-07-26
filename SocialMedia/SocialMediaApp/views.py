@@ -210,12 +210,12 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         post = get_object_or_404(Post, pk=pk)
 
         if request.method == 'POST':
-            like, created = Like.objects.get_or_create(user=user, post=post)
-            if not created:
-                like.delete()
-                return Response({'message': 'Post unliked'}, status=status.HTTP_200_OK)
-
-            return Response({'message': 'Post liked'}, status=status.HTTP_201_CREATED)
+            post = get_object_or_404(Post, pk=pk)
+            like, created = Like.objects.get_or_create(user=request.user, post=post)
+            if created:
+                return Response({'status': 'liked'}, status=status.HTTP_201_CREATED)
+            else:
+                return Response({'status': 'already liked'}, status=status.HTTP_200_OK)
 
         if request.method == 'GET':
             # Lấy tất cả người dùng đã thích bài viết
@@ -233,6 +233,13 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
             # Trả về tất cả người dùng nếu không phân trang
             serializer = serializers.UserDetailSerializer(users, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
+
+    @action(methods=['post'], detail=True, url_path='unlike')
+    def unlike(self, request, pk=None):
+        post = get_object_or_404(Post, pk=pk)
+        like = get_object_or_404(Like, user=request.user, post=post)
+        like.delete()
+        return Response({'status': 'unliked'}, status=status.HTTP_204_NO_CONTENT)
 
     # Tạo post
     def create(self, request, *args, **kwargs):
