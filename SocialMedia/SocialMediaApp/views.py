@@ -161,25 +161,21 @@ class UserViewSet(viewsets.ViewSet, generics.CreateAPIView):
         return self.get_paginated_response(serializer.data)
 
 
-class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView,generics.ListAPIView):
+class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIView, generics.RetrieveAPIView, generics.ListAPIView):
     queryset = Post.objects.all().order_by('-created_date')
     serializer_class = serializers.PostSerializer
-    parser_classes = [MultiPartParser, FormParser]  # Thêm các parser này để xử lý form-data
-    pagination_class = my_paginations.PostPagination  # Sử dụng phân trang tùy chỉnh
+    parser_classes = [MultiPartParser, FormParser]
+    pagination_class = my_paginations.PostPagination
 
     def get_serializer_class(self):
-        if self.action in ['list','get_personal_posts_list']:
+        if self.action in ['list', 'get_personal_posts_list']:
             return serializers.PostDetailSerializer
         return self.serializer_class
 
     def retrieve(self, request, *args, **kwargs):
-        post = self.get_object()  # Lấy đối tượng Post dựa trên pk
-
-        # Lấy tất cả bình luận liên quan đến bài viết
-        comments = Comment.objects.filter(post=post,parent=None).order_by('-created_date')
-
-        # Phân trang bình luận
-        paginator = my_paginations.CommentPagination()  # Sử dụng phân trang bình luận
+        post = self.get_object()
+        comments = Comment.objects.filter(post=post, parent=None).order_by('-created_date')
+        paginator = my_paginations.CommentPagination()
         page = paginator.paginate_queryset(comments, request)
         if page is not None:
             comment_serializer = serializers.CommentListSerializer(page, many=True, context={'request': request})
@@ -192,45 +188,30 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
                 'previous': None,
                 'results': comment_serializer.data
             }
-
-        # Serialize dữ liệu bài viết
         post_serializer = serializers.PostDetailSerializer(post, context={'request': request})
-
-        # Tạo cấu trúc dữ liệu trả về
         response_data = {
             'post': post_serializer.data,
             'comments': comments_data
         }
-
         return Response(response_data, status=status.HTTP_200_OK)
 
     @action(methods=['post', 'get'], detail=True, url_path='like')
     def like(self, request, pk=None):
         user = request.user
         post = get_object_or_404(Post, pk=pk)
-
         if request.method == 'POST':
-            post = get_object_or_404(Post, pk=pk)
-            like, created = Like.objects.get_or_create(user=request.user, post=post)
+            like, created = Like.objects.get_or_create(user=user, post=post)
             if created:
                 return Response({'status': 'liked'}, status=status.HTTP_201_CREATED)
             else:
                 return Response({'status': 'already liked'}, status=status.HTTP_200_OK)
-
-        if request.method == 'GET':
-            # Lấy tất cả người dùng đã thích bài viết
+        elif request.method == 'GET':
             likes = Like.objects.filter(post=post).select_related('user')
-
-            # Chuyển đổi người dùng thành dữ liệu phù hợp với UserDetailSerializer
             users = [like.user for like in likes]
-
-            # Phân trang dữ liệu nếu cần thiết
             page = self.paginate_queryset(users)
             if page is not None:
                 serializer = serializers.UserDetailSerializer(page, many=True, context={'request': request})
                 return self.get_paginated_response(serializer.data)
-
-            # Trả về tất cả người dùng nếu không phân trang
             serializer = serializers.UserDetailSerializer(users, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -241,41 +222,33 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         like.delete()
         return Response({'status': 'unliked'}, status=status.HTTP_204_NO_CONTENT)
 
-    # Tạo post
     def create(self, request, *args, **kwargs):
         user = self.request.user
         content = self.request.data.get('content')
         visibility = self.request.data.get('visibility')
         custom_viewers_ids = self.request.data.getlist('custom_viewers')
-        media = self.request.FILES.getlist('media')  # Lấy danh sách các file media
+        media = self.request.FILES.getlist('media')
         post = Post.objects.create(user=user, content=content, visibility=visibility)
         if visibility == 'custom':
-            # Lấy danh sách các user từ danh sách id
             custom_viewers = User.objects.filter(id__in=custom_viewers_ids)
-            post.custom_viewers.set(custom_viewers)  # Thêm tất cả các custom_viewers vào bài viết
-
+            post.custom_viewers.set(custom_viewers)
         for file in media:
             Media.objects.create(post=post, file=file)
-        return Response(serializers.PostDetailSerializer(post, context={'request': request}).data,
-                        status=status.HTTP_201_CREATED)
+        return Response(serializers.PostDetailSerializer(post, context={'request': request}).data, status=status.HTTP_201_CREATED)
 
     def list(self, request, *args, **kwargs):
         user = request.user
-        following = user.following.all().values_list('to_user',
-                                                     flat=True)  # Lấy danh sách ID của người mà người dùng hiện tại đang theo dõi
-
+        following = user.following.all().values_list('to_user', flat=True)
         queryset = Post.objects.filter(
             Q(visibility='public') |
             Q(user=user) |
             Q(visibility='followers', user__in=following) |
             Q(visibility='custom', custom_viewers=user)
         ).distinct().order_by('-created_date')
-
         page = self.paginate_queryset(queryset)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
-
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
@@ -288,27 +261,21 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
     @action(methods=['post', 'get'], detail=True, url_path='comment')
     def comment(self, request, pk=None):
         post = get_object_or_404(Post, pk=pk)
-
         if request.method == 'POST':
-            # Tạo bình luận mới
             data = request.data.copy()
             data['user'] = request.user.id
             data['post'] = pk
-
             parent_id = data.get('parent')
             if parent_id:
                 parent_comment = get_object_or_404(Comment, pk=parent_id)
                 data['parent'] = parent_comment.id
-
             serializer = serializers.CommentSerializer(data=data, context={'request': request})
             if serializer.is_valid():
                 comment = serializer.save()
                 response_serializer = serializers.CommentListSerializer(comment, context={'request': request})
                 return Response(response_serializer.data, status=status.HTTP_201_CREATED)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
         elif request.method == 'GET':
-            # Lấy danh sách bình luận với phân trang
             comments = Comment.objects.filter(post=post, parent=None).order_by('-created_at')
             page = self.paginate_queryset(comments)
             if page is not None:
@@ -322,11 +289,9 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         serializer = self.get_serializer(post, data=request.data, partial=True)
         if serializer.is_valid():
             updated_post = serializer.save()
-            # Xóa custom_viewers nếu visibility không phải là 'custom'
             if 'visibility' in request.data and request.data['visibility'] != 'custom':
                 updated_post.custom_viewers.clear()
-            # Thêm media mới
-            new_media = request.FILES.getlist('media')  # Lấy danh sách các file media mới
+            new_media = request.FILES.getlist('media')
             if new_media:
                 for file in new_media:
                     Media.objects.create(post=updated_post, file=file)
@@ -335,21 +300,15 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
 
     @action(methods=['get'], url_path='personal', detail=False)
     def get_personal_posts_list(self, request, pk=None):
-        # Lấy người dùng từ request hoặc sử dụng pk để tìm người dùng
-        user = request.user  # Lấy người dùng từ pk (nếu pk là ID người dùng)
-
-        # Lọc các bài viết của người dùng
+        user = request.user
         posts = Post.objects.filter(user=user).order_by('-created_date')
-
-        # Phân trang nếu cần
         page = self.paginate_queryset(posts)
         if page is not None:
-            serializer = self.get_serializer(page, many=True, context={'request': request})
+            serializer = serializers.PostDetailSerializer(page, many=True, context={'request': request})
             return self.get_paginated_response(serializer.data)
+        serializer = serializers.PostDetailSerializer(posts, many=True, context={'request': request})
+        return Response(serializer.data)
 
-        # Trả về dữ liệu nếu không sử dụng phân trang
-        serializer = self.get_serializer(posts, many=True, context={'request': request})
-        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 class CommentViewSet(viewsets.ViewSet,generics.ListAPIView):

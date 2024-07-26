@@ -21,17 +21,14 @@ def delete_comment_file(sender, instance, **kwargs):
 def increase_like_count(sender, instance, created, **kwargs):
     if created:
         with transaction.atomic():
-        # Cập nhật số lượng like của bài viết
             post = instance.post
             post.like_number = F('like_number') + 1
             post.save(update_fields=['like_number'])
 
-            # Cập nhật số lượng like của người dùng
             profile = post.user.profile
-            profile.like_number += 1
+            profile.like_number = F('like_number') + 1
             profile.save()
             print('increase_like_count')
-
 
 @receiver(post_delete, sender=Like)
 def decrease_like_count(sender, instance, **kwargs):
@@ -41,7 +38,7 @@ def decrease_like_count(sender, instance, **kwargs):
         post.save(update_fields=['like_number'])
 
         profile = post.user.profile
-        profile.like_number -= 1
+        profile.like_number = F('like_number') - 1
         profile.save()
         print('decrease_like_count')
 
@@ -105,15 +102,29 @@ def update_profile_on_post_delete(sender, instance, **kwargs):
         profile.save()
 
 def connect_signals():
-    for signal in [delete_media_file, delete_comment_file, increase_like_count, decrease_like_count,
-                   increase_comment_count, decrease_comment_count, update_follow_counts_on_create,
-                   update_follow_counts_on_delete, update_post_number_on_create, update_profile_on_post_delete]:
-        for sender in ['SocialMediaApp.Media', 'SocialMediaApp.Comment', 'SocialMediaApp.Like',
-                       'SocialMediaApp.Follow', 'SocialMediaApp.Post']:
-            post_delete.connect(signal, sender=apps.get_model(sender))
-            post_save.connect(signal, sender=apps.get_model(sender))
+    from .signals import (delete_media_file, delete_comment_file, increase_like_count,
+                          decrease_like_count, increase_comment_count, decrease_comment_count,
+                          update_follow_counts_on_create, update_follow_counts_on_delete,
+                          update_post_number_on_create, update_profile_on_post_delete)
+
+    models_and_signals = [
+        (delete_media_file, 'SocialMediaApp.Media'),
+        (delete_comment_file, 'SocialMediaApp.Comment'),
+        (increase_like_count, 'SocialMediaApp.Like'),
+        (decrease_like_count, 'SocialMediaApp.Like'),
+        (increase_comment_count, 'SocialMediaApp.Comment'),
+        (decrease_comment_count, 'SocialMediaApp.Comment'),
+        (update_follow_counts_on_create, 'SocialMediaApp.Follow'),
+        (update_follow_counts_on_delete, 'SocialMediaApp.Follow'),
+        (update_post_number_on_create, 'SocialMediaApp.Post'),
+        (update_profile_on_post_delete, 'SocialMediaApp.Post')
+    ]
+
+    for signal, sender in models_and_signals:
+        model = apps.get_model(sender)
+        post_save.connect(signal, sender=model)
+        post_delete.connect(signal, sender=model)
 def disconnect_signals_decrease_like_count():
-    for signal in [decrease_like_count]:
-        for sender in ['SocialMediaApp.Like']:
-            post_delete.disconnect(signal, sender=apps.get_model(sender))
-            post_save.disconnect(signal, sender=apps.get_model(sender))
+    from .signals import decrease_like_count
+    model = apps.get_model('SocialMediaApp.Like')
+    post_delete.disconnect(decrease_like_count, sender=model)
