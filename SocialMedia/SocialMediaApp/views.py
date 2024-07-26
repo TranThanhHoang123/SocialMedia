@@ -252,9 +252,13 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    def destroy(self, request, pk=None):
+    def destroy(self, request, *args, **kwargs):
+        # Kiểm tra nếu DELETE được thực hiện từ endpoint không đúng
+        if self.action != 'destroy':
+            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
+
         disconnect_signals_decrease_like_count()
-        post = get_object_or_404(Post, pk=pk, user=request.user)
+        post = get_object_or_404(Post, pk=kwargs['pk'], user=request.user)
         post.delete()
         return Response({'message': 'Xóa bài viết thành công'}, status=status.HTTP_204_NO_CONTENT)
 
