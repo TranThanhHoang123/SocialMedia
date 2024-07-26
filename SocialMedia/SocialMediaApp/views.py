@@ -195,16 +195,18 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         }
         return Response(response_data, status=status.HTTP_200_OK)
 
-    @action(methods=['post', 'get'], detail=True, url_path='like')
+    @action(methods=['post', 'get', 'delete'], detail=True, url_path='like')
     def like(self, request, pk=None):
         user = request.user
         post = get_object_or_404(Post, pk=pk)
+
         if request.method == 'POST':
             like, created = Like.objects.get_or_create(user=user, post=post)
             if created:
                 return Response({'status': 'liked'}, status=status.HTTP_201_CREATED)
             else:
                 return Response({'status': 'already liked'}, status=status.HTTP_200_OK)
+
         elif request.method == 'GET':
             likes = Like.objects.filter(post=post).select_related('user')
             users = [like.user for like in likes]
@@ -215,12 +217,10 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
             serializer = serializers.UserDetailSerializer(users, many=True, context={'request': request})
             return Response(serializer.data, status=status.HTTP_200_OK)
 
-    @action(methods=['post'], detail=True, url_path='unlike')
-    def unlike(self, request, pk=None):
-        post = get_object_or_404(Post, pk=pk)
-        like = get_object_or_404(Like, user=request.user, post=post)
-        like.delete()
-        return Response({'status': 'unliked'}, status=status.HTTP_204_NO_CONTENT)
+        elif request.method == 'DELETE':
+            like = get_object_or_404(Like, user=user, post=post)
+            like.delete()
+            return Response({'status': 'unliked'}, status=status.HTTP_204_NO_CONTENT)
 
     def create(self, request, *args, **kwargs):
         user = self.request.user
@@ -253,10 +253,6 @@ class PostViewSet(viewsets.ViewSet, generics.CreateAPIView, generics.DestroyAPIV
         return Response(serializer.data)
 
     def destroy(self, request, *args, **kwargs):
-        # Kiểm tra nếu DELETE được thực hiện từ endpoint không đúng
-        if self.action != 'destroy':
-            return Response({'error': 'Invalid action'}, status=status.HTTP_400_BAD_REQUEST)
-
         disconnect_signals_decrease_like_count()
         post = get_object_or_404(Post, pk=kwargs['pk'], user=request.user)
         post.delete()
